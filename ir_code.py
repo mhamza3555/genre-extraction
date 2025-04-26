@@ -1,15 +1,15 @@
-# 🛠️ Setup and Imports
+# 📦 Imports and Setup
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import os
 import re
 
-# 🧹 Helper Function
+# 🧹 Utility Function
 def safe_get_text(tag):
     return tag.get_text(strip=True) if tag else "Not found"
 
-# 📥 Fetch from Wikipedia
+# 🌐 Fetch from Wikipedia
 def fetch_wiki_data(movie_name):
     try:
         formatted_name = movie_name.strip().replace(" ", "_")
@@ -153,7 +153,7 @@ def get_movie_details_from_imdb(movie_name):
         print(f"❌ Error fetching IMDb details for {movie_name}: {e}")
         return None
 
-# 🔎 Infer Genre from Plot (if needed)
+# 🔎 Infer Genre from Plot
 def infer_genre_from_plot(plot):
     print(f"🎯 Inferring genre from plot...")
     keywords = {
@@ -173,7 +173,50 @@ def infer_genre_from_plot(plot):
     print(f"✅ Genre inference complete.")
     return result
 
-# 🎬 Collect Information
+# 🌟 Fetch Rating from Multiple Sources
+def fetch_rating(movie_name):
+    print(f"\n🎬 Fetching rating for: {movie_name}")
+
+    sources = [
+        ("IMDb", f"https://www.imdb.com/find?q={movie_name.replace(' ', '+')}&s=tt", "td", {"class": "result_text"}, "span", {"data-testid": "hero-rating-bar__aggregate-rating__score"}),
+        ("Rotten Tomatoes", f"https://www.rottentomatoes.com/search?search={movie_name.replace(' ', '%20')}", "score-pairs", {}, None, {}),
+        ("Letterboxd", f"https://letterboxd.com/search/{movie_name.replace(' ', '%20')}", "span", {"class": "average-rating"}, None, {}),
+        ("TMDb", f"https://www.themoviedb.org/search?query={movie_name.replace(' ', '%20')}", "div", {"class": "user_score_chart"}, None, {})
+    ]
+
+    for source, url, search_tag, search_attrs, rating_tag, rating_attrs in sources:
+        try:
+            print(f"🔍 Searching {source}...")
+            response = requests.get(url)
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            element = soup.find(search_tag, search_attrs)
+
+            if element:
+                if source == "IMDb" and rating_tag:
+                    print(f"✅ IMDb result found. Navigating to movie page...")
+                    movie_url = "https://www.imdb.com" + element.find("a")["href"]
+                    movie_page = requests.get(movie_url)
+                    movie_soup = BeautifulSoup(movie_page.text, 'html.parser')
+                    rating_element = movie_soup.find(rating_tag, rating_attrs)
+                    if rating_element:
+                        return safe_get_text(rating_element)
+                elif source == "Rotten Tomatoes":
+                    return safe_get_text(element)
+                elif source == "Letterboxd":
+                    return safe_get_text(element)
+                elif source == "TMDb" and element.has_attr("data-percent"):
+                    return element["data-percent"] + "%"
+            else:
+                print(f"❌ No rating found on {source}.")
+
+        except Exception as e:
+            print(f"❌ {source} Error: {e}")
+
+    print(f"❌ No rating found from any source.")
+    return "Not found"
+
+# 🎬 Collect All Movie Information
 def get_movie_info(movie_name):
     print(f"\n📄 Gathering information for: {movie_name}")
     wiki_data = fetch_wiki_data(movie_name)
@@ -212,8 +255,8 @@ def get_movie_info(movie_name):
     if details["Genre"] == "Not found" and details["Plot"] != "Not found":
         details["Genre"] = infer_genre_from_plot(details["Plot"])
 
-    if details["Genre"] == "Not found":
-        details["Genre"] = "Genre not available"
+    if details["Rating"] == "Not found":
+        details["Rating"] = fetch_rating(movie_name)
 
     print(f"✅ Information collection complete for {movie_name}\n")
     return details
@@ -229,11 +272,13 @@ movie_names = [
 
 # 📈 Save Data to Excel
 movie_data = []
+file_path = r"C:\\Project\\movie_summary.xlsx"
+
+print("\n🚀 Starting movie processing...")
+
 for name in movie_names:
     info = get_movie_info(name)
     movie_data.append(info)
-
-file_path = r"C:\\Project\\movie_summary.xlsx"
 
 if os.path.exists(file_path):
     print("📂 Existing Excel file found, updating...")
